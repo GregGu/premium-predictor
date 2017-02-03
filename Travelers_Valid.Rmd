@@ -1,0 +1,381 @@
+---
+title: "Random Forest Modeling and Prediction with Two models; Frequency and Severity"
+author: "greg"
+date: "November 8, 2016"
+output: html_document
+---
+## Plan
+
+```{r}
+#Step 0 importing data and libraries
+#Step 1.1 Facet Engineering and Heuristic Factors for train (Note: For next step, Copy into new file, ctrl f, repalce all "train" with test)
+#Step 1 Facet Engineering and Heuristic Factors for test
+#Step 2 Factor (train, test)
+#Step 3 SVM 
+#Step 4 GBM SOLO
+#Step 5 (part 1) Logistic Regression to predict probability of claim
+#Step 5 (part 2) GMB to predict cost
+#Step 5 (part 3) Expected Value
+```
+      
+## Step 0 Importing Data
+```{r}
+# importing training data
+train.df<-read.csv("Kangaroo_train.csv")
+
+# importing the validation data for test data
+test.df<-read.csv("Kangaroo_valid.csv")
+
+# importing validation data with actual values
+repsonse<-read.csv("Kangaroo_valid_w_response.csv")
+
+# check for na in data
+any(is.na(train.df))
+
+# import libraries
+library(dplyr)
+library(ggplot2)
+library('reshape2')
+library('gbm')
+library('ROCR')
+
+library("e1071")
+library("class")
+library("ranger")
+
+library("caret")
+library("glmnet")
+library("ROCR")
+
+#Commented out this handy sample. Use this code to remove na if I encounter them during facet engineering
+#na<-is.na(train.df$new)
+#train.df$new[na]<-0
+```
+## Facet Engineering Plan
+
+-veh_value categorized
+
+!!!!!Exposure!!!!!
+looking at a (claim cost bin/exposure bin)we can get a better idea of how much the respective bin cost
+looking at a (claim count bin/exposure bin)we can get a better idea of how likely a claim is in respective bin
+
+-cost/exposure_relativity = (cost total of bin facet/exposure total of bin facet)/(average pure premium)
+                                           = (cost total of bin facet/exposure total of bin facet)/pp
+                                           
+    Lets represent this as pr for pure premium relativity                             
+                                           
+    Note: Bins will be created through cross variable analysis
+    gender&dr_age
+    ie.
+    -cost_male_age1_relativity
+    -cost_female_age1_relativity
+    -cost_female_age2_relativity
+   
+   veh_age&veh_value
+    
+These factors show us how much better or worse a group is than the average. It will be used to differentiate. I will multiply the final prediction by these values. This will boost the gini coeficient. 
+
+-count/exposure_relativity = (claim total of bin facet/exposure total of bin facet)/(total dataset claim_count/total exposure)
+
+      Lets represent this as cr for count relativity 
+      
+## Step 1 FACET ENGINEERING FOR TRAIN
+```{r}
+############################################################################
+#             NEW VEH_BOD CATEGORIES
+############################################################################
+
+#new variable for sport
+s<-train.df$veh_body=="COUPE"|train.df$veh_body=="CONVT"|train.df$veh_body=="HDTOP"|train.df$veh_body=="RDSTR"
+#new variable for bus
+b<-train.df$veh_body=="BUS"|train.df$veh_body=="MCARA"|train.df$veh_body=="MIBUS"|train.df$veh_body=="PANVN"
+
+#change veh_body from factor to character
+train.df$veh_body<-as.character(train.df$veh_body)
+
+#add new factor(grouped categories) as string called "SPORT"
+train.df$veh_body[s]<-"SPORT"
+#add new factor(grouped categories) as string called "BUS"
+train.df$veh_body[b]<-"BUS"
+
+############################################################################
+#             VEH_VAL CHANGE TO CATEGORIES
+############################################################################
+
+#lets multiply by 100 to make the ranges easier to work with
+train.df$veh_value<-train.df$veh_value*100
+#now that we have integers we need to convert the data
+train.df$veh_value<-as.integer(train.df$veh_value)
+#ifelse&mutate to change the variable from numeric to categorical
+train.df<-mutate(train.df, veh_value = ifelse(veh_value %in% 00:99, "A",
+                                     ifelse(veh_value %in% 100:199, "B",
+                                            ifelse(veh_value %in% 200:299, "C",
+                                                   ifelse(veh_value %in% 300:399, "D",
+                                                          ifelse(veh_value %in% 400:499, "E", "F"))))))
+
+############################################################################
+#             NEW PR AND CR VARIABLES
+############################################################################
+
+#pure premium average
+j1<-sum(train.df$claim_cost)
+j2<-sum(train.df$exposure)
+pp<-j1/j2
+
+#pr for males/dr_age
+M_1_pr<-(sum(train.df$claim_cost[train.df$gender=="M"&train.df$dr_age==1])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==1]))/pp
+M_2_pr<-(sum(train.df$claim_cost[train.df$gender=="M"&train.df$dr_age==2])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==2]))/pp
+M_3_pr<-(sum(train.df$claim_cost[train.df$gender=="M"&train.df$dr_age==3])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==3]))/pp
+M_4_pr<-(sum(train.df$claim_cost[train.df$gender=="M"&train.df$dr_age==4])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==4]))/pp
+M_5_pr<-(sum(train.df$claim_cost[train.df$gender=="M"&train.df$dr_age==5])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==5]))/pp
+M_6_pr<-(sum(train.df$claim_cost[train.df$gender=="M"&train.df$dr_age==6])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==6]))/pp
+
+
+#pr for females/dr_age
+F_1_pr<-(sum(train.df$claim_cost[train.df$gender=="F"&train.df$dr_age==1])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==1]))/pp
+F_2_pr<-(sum(train.df$claim_cost[train.df$gender=="F"&train.df$dr_age==2])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==2]))/pp
+F_3_pr<-(sum(train.df$claim_cost[train.df$gender=="F"&train.df$dr_age==3])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==3]))/pp
+F_4_pr<-(sum(train.df$claim_cost[train.df$gender=="F"&train.df$dr_age==4])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==4]))/pp
+F_5_pr<-(sum(train.df$claim_cost[train.df$gender=="F"&train.df$dr_age==5])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==5]))/pp
+F_6_pr<-(sum(train.df$claim_cost[train.df$gender=="F"&train.df$dr_age==6])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==6]))/pp
+
+#Now lets turn pr into a variable for our data set
+train.df$pr<-0
+train.df$pr[train.df$gender=="M"&train.df$dr_age==1]<-M_1_pr
+train.df$pr[train.df$gender=="M"&train.df$dr_age==2]<-M_2_pr
+train.df$pr[train.df$gender=="M"&train.df$dr_age==3]<-M_3_pr
+train.df$pr[train.df$gender=="M"&train.df$dr_age==4]<-M_4_pr
+train.df$pr[train.df$gender=="M"&train.df$dr_age==5]<-M_5_pr
+train.df$pr[train.df$gender=="M"&train.df$dr_age==6]<-M_6_pr
+
+train.df$pr[train.df$gender=="F"&train.df$dr_age==1]<-F_1_pr
+train.df$pr[train.df$gender=="F"&train.df$dr_age==2]<-F_2_pr
+train.df$pr[train.df$gender=="F"&train.df$dr_age==3]<-F_3_pr
+train.df$pr[train.df$gender=="F"&train.df$dr_age==4]<-F_4_pr
+train.df$pr[train.df$gender=="F"&train.df$dr_age==5]<-F_5_pr
+train.df$pr[train.df$gender=="F"&train.df$dr_age==6]<-F_6_pr
+
+#cr average
+j3<-sum(train.df$claim_count)
+j4<-sum(train.df$exposure)
+cr<-j3/j4
+
+#cr for males/dr_age
+M_1_cr<-(sum(train.df$claim_count[train.df$gender=="M"&train.df$dr_age==1])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==1]))/cr
+M_2_cr<-(sum(train.df$claim_count[train.df$gender=="M"&train.df$dr_age==2])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==2]))/cr
+M_3_cr<-(sum(train.df$claim_count[train.df$gender=="M"&train.df$dr_age==3])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==3]))/cr
+M_4_cr<-(sum(train.df$claim_count[train.df$gender=="M"&train.df$dr_age==4])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==4]))/cr
+M_5_cr<-(sum(train.df$claim_count[train.df$gender=="M"&train.df$dr_age==5])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==5]))/cr
+M_6_cr<-(sum(train.df$claim_count[train.df$gender=="M"&train.df$dr_age==6])/sum(train.df$exposure[train.df$gender=="M"&train.df$dr_age==6]))/cr
+
+
+#cr for females/dr_age
+F_1_cr<-(sum(train.df$claim_count[train.df$gender=="F"&train.df$dr_age==1])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==1]))/cr
+F_2_cr<-(sum(train.df$claim_count[train.df$gender=="F"&train.df$dr_age==2])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==2]))/cr
+F_3_cr<-(sum(train.df$claim_count[train.df$gender=="F"&train.df$dr_age==3])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==3]))/cr
+F_4_cr<-(sum(train.df$claim_count[train.df$gender=="F"&train.df$dr_age==4])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==4]))/cr
+F_5_cr<-(sum(train.df$claim_count[train.df$gender=="F"&train.df$dr_age==5])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==5]))/cr
+F_6_cr<-(sum(train.df$claim_count[train.df$gender=="F"&train.df$dr_age==6])/sum(train.df$exposure[train.df$gender=="F"&train.df$dr_age==6]))/cr
+
+
+#Finally make cr into a variable for our data
+train.df$cr[train.df$gender=="M"&train.df$dr_age==1]<-M_1_cr
+train.df$cr[train.df$gender=="M"&train.df$dr_age==2]<-M_2_cr
+train.df$cr[train.df$gender=="M"&train.df$dr_age==3]<-M_3_cr
+train.df$cr[train.df$gender=="M"&train.df$dr_age==4]<-M_4_cr
+train.df$cr[train.df$gender=="M"&train.df$dr_age==5]<-M_5_cr
+train.df$cr[train.df$gender=="M"&train.df$dr_age==6]<-M_6_cr
+
+train.df$cr[train.df$gender=="F"&train.df$dr_age==1]<-F_1_cr
+train.df$cr[train.df$gender=="F"&train.df$dr_age==2]<-F_2_cr
+train.df$cr[train.df$gender=="F"&train.df$dr_age==3]<-F_3_cr
+train.df$cr[train.df$gender=="F"&train.df$dr_age==4]<-F_4_cr
+train.df$cr[train.df$gender=="F"&train.df$dr_age==5]<-F_5_cr
+train.df$cr[train.df$gender=="F"&train.df$dr_age==6]<-F_6_cr
+
+
+```
+
+## Step 1.1 FACET ENGINEERING FOR TEST
+```{r}
+############################################################################
+#             NEW VEH_BOD CATEGORIES 
+############################################################################
+
+#new variable for sport
+s<-test.df$veh_body=="COUPE"|test.df$veh_body=="CONVT"|test.df$veh_body=="HDTOP"|test.df$veh_body=="RDSTR"
+#new variable for bus
+b<-test.df$veh_body=="BUS"|test.df$veh_body=="MCARA"|test.df$veh_body=="MIBUS"|test.df$veh_body=="PANVN"
+
+#change veh_body from factor to character
+test.df$veh_body<-as.character(test.df$veh_body)
+
+#add new factor(grouped categories) as string called "SPORT"
+test.df$veh_body[s]<-"SPORT"
+#add new factor(grouped categories) as string called "BUS"
+test.df$veh_body[b]<-"BUS"
+
+############################################################################
+#             VEH_VAL CHANGE TO CATEGORIES
+############################################################################
+
+#lets multiply by 100 to make the ranges easier to work with
+test.df$veh_value<-test.df$veh_value*100
+#now that we have integers we need to convert the data
+test.df$veh_value<-as.integer(test.df$veh_value)
+#ifelse&mutate to change the variable from numeric to categorical
+test.df<-mutate(test.df, veh_value = ifelse(veh_value %in% 00:99, "A",
+                                     ifelse(veh_value %in% 100:199, "B",
+                                            ifelse(veh_value %in% 200:299, "C",
+                                                   ifelse(veh_value %in% 300:399, "D",
+                                                          ifelse(veh_value %in% 400:499, "E", "F"))))))
+
+
+############################################################################################
+#             NEW PR AND CR VARIABLES 
+############################################################################################
+
+#I use the relativity values engineered from the bins in the training data to construct new variables for the test set
+#Now lets turn pr into a variable for our data set
+test.df$pr<-0
+test.df$pr[test.df$gender=="M"&test.df$dr_age==1]<-M_1_pr
+test.df$pr[test.df$gender=="M"&test.df$dr_age==2]<-M_2_pr
+test.df$pr[test.df$gender=="M"&test.df$dr_age==3]<-M_3_pr
+test.df$pr[test.df$gender=="M"&test.df$dr_age==4]<-M_4_pr
+test.df$pr[test.df$gender=="M"&test.df$dr_age==5]<-M_5_pr
+test.df$pr[test.df$gender=="M"&test.df$dr_age==6]<-M_6_pr
+
+test.df$pr[test.df$gender=="F"&test.df$dr_age==1]<-F_1_pr
+test.df$pr[test.df$gender=="F"&test.df$dr_age==2]<-F_2_pr
+test.df$pr[test.df$gender=="F"&test.df$dr_age==3]<-F_3_pr
+test.df$pr[test.df$gender=="F"&test.df$dr_age==4]<-F_4_pr
+test.df$pr[test.df$gender=="F"&test.df$dr_age==5]<-F_5_pr
+test.df$pr[test.df$gender=="F"&test.df$dr_age==6]<-F_6_pr
+
+#Finally make cr into a variable for our data
+test.df$cr[test.df$gender=="M"&test.df$dr_age==1]<-M_1_cr
+test.df$cr[test.df$gender=="M"&test.df$dr_age==2]<-M_2_cr
+test.df$cr[test.df$gender=="M"&test.df$dr_age==3]<-M_3_cr
+test.df$cr[test.df$gender=="M"&test.df$dr_age==4]<-M_4_cr
+test.df$cr[test.df$gender=="M"&test.df$dr_age==5]<-M_5_cr
+test.df$cr[test.df$gender=="M"&test.df$dr_age==6]<-M_6_cr
+
+test.df$cr[test.df$gender=="F"&test.df$dr_age==1]<-F_1_cr
+test.df$cr[test.df$gender=="F"&test.df$dr_age==2]<-F_2_cr
+test.df$cr[test.df$gender=="F"&test.df$dr_age==3]<-F_3_cr
+test.df$cr[test.df$gender=="F"&test.df$dr_age==4]<-F_4_cr
+test.df$cr[test.df$gender=="F"&test.df$dr_age==5]<-F_5_cr
+test.df$cr[test.df$gender=="F"&test.df$dr_age==6]<-F_6_cr
+```
+
+## Step 2 FACTORING
+```{r}
+#factoring train
+train.df$dr_age<-factor(train.df$dr_age)
+train.df$veh_age<-factor(train.df$veh_age)
+train.df$veh_body<-factor(train.df$veh_body)
+train.df$veh_value<-factor(train.df$veh_value)
+#factoring test
+test.df$dr_age<-factor(test.df$dr_age)
+test.df$veh_age<-factor(test.df$veh_age)
+test.df$veh_body<-factor(test.df$veh_body)
+test.df$veh_value<-factor(test.df$veh_value)
+```
+
+## Step 3 SVM MODEL
+```{r, eval=F}
+# making a new train data set to work with for modeling
+# Removing some response variables we no longer need
+
+factor(train.df$claim_count)
+train<-train.df[,-c(1,9,11)]
+
+#making the new test set for prediction
+test<-test.df[,-c(1)]
+
+model_svm<-svm(claim_count~.,data=train,kernel="linear",cost=.1,scale=FALSE)
+print(model_svm)
+```
+
+## Step 4 GBM SOLO MODEL
+```{r, eval=F}
+# making a new train data set to work with for modeling
+# Removing some response variables we no longer need
+train<-train.df[,-c(1,9,10)]
+
+#making the new test set for prediction
+test<-test.df[,-c(1)]
+
+#Model/Prediction Freq Using Random Forest method="Ranger"
+# Fit random forest: model
+model_gbm1 <- train(
+  claim_cost~.,
+  tuneLength = 5,
+  data = train, method = "gbm",
+  trControl = trainControl(method = "cv", number = 5, verboseIter = TRUE)
+)
+print(model_gbm1)
+summary(model_gbm1)
+plot(model_gbm1)
+
+
+#predict
+premium_prediction<-predict(model_gbm1, test, type="raw")
+#making data frame for predictions
+pure_premium<-data.frame(id=test.df$id,premium_prediction)
+#write the data.frame as csv
+write.csv(pure_premium, file = "GBM1_predictions.csv")
+```
+
+## Step 5 (part1) GLM for claim probability
+```{r}
+# Removing some response variables we no longer need
+train<-train.df[,-c(1,10,11)]
+
+#making the new test set for prediction
+test<-test.df[,-c(1)]
+
+#the logistic model
+model_glm<-glm(formula = claim_ind ~ ., family = binomial(link = "logit"), 
+    data = train)
+
+#predict probability of claim
+claim_prediction<-predict(model_glm, test, type="response")
+```
+
+## Step 5 (part2) GBM for claim_cost, without claim_count=0
+```{r}
+
+#filter zero claim with dplyr
+
+train0 <- dplyr::filter(train.df, claim_count != 0)
+
+# Removing some response variables we no longer need
+
+train<-train0[,-c(1,9,10)]
+
+#making the new test set for prediction
+
+test<-test.df[,-c(1)]
+
+model_gbm2 <- train(
+  claim_cost~.,
+  tuneLength = 5,
+  data = train, method = "gbm",
+  trControl = trainControl(method = "cv", number = 5, verboseIter = TRUE)
+)
+
+#predicting cost
+
+premium_prediction<-predict(model_gbm2, test, type="raw")
+
+```
+
+## Step 5 (part3) Multiply resulting
+```{r}
+#multiply prob by the predicted cost for an expected value
+
+pure_premium_combo<-data.frame(test.df[,1],premium_prediction*claim_prediction, repsonse[,11])
+
+#write.csv(pure_premium, file = "Hold_predictions1_JEBG.csv")
+```

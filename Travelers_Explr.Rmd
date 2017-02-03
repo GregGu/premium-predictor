@@ -1,0 +1,181 @@
+
+
+Exploring frequency(count/exposure) and veh_body
+```{r}
+
+
+#looking at fequency per veh_body
+ggplot(data=train.df, aes(x=claim_cost, fill=pr, colour=pr))+geom_density()+facet_wrap(~pr)+xlim(0,10000)+scale_x_log10()
+#jitter
+ggplot(data=train.df, aes(x=pr, y=claim_cost))+ geom_jitter(width=.4,height=0, alpha=.3)
+
+
+#lets check area too
+sum(train.df$area=="A")
+sum(train.df$area=="B")
+sum(train.df$area=="C")
+sum(train.df$area=="D")
+sum(train.df$area=="E")
+sum(train.df$area=="F")
+
+#check distribution for sample size
+plot(train.df$area, xlab="area",ylab="sample size", col=4)
+#check distribution for sample size
+plot(train.df$dr_age)
+#check distribution for sample size
+plot(train.df$veh_age)
+
+
+
+#ploting density of vehbod and freq
+ggplot(data=train.df, aes(frequency_1, fill=veh_body, colour=veh_body))+ geom_density(alpha=0.2)+xlim(0,20)+scale_x_log10()
+
+ggplot(data=train.df, aes(x=frequency_1, fill=veh_body, colour=veh_body))+ geom_density()+scale_x_log10()+facet_wrap(~veh_body)+geom_rug()
+
+#sample sizes of veh_bod
+plot(train.df$veh_body, xlab="veh_body", ylab="samples size", col=4)
+
+
+
+
+#looking at gender
+ggplot(data=train.df, aes(frequency_1, fill=gender, colour=gender))+ geom_density(alpha=0.2)+xlim(0,15)+facet_wrap(~gender)
+
+#######################################################################################################
+#######################################################################################################
+
+#looking at fequency counts per veh_body after removing claim_count=0 data
+ggplot(data=kangaroo0, aes(x=veh_body, y=(frequency)))+ geom_jitter(width=.4,height=0, alpha=.3)
+
+#density
+ggplot(data=kangaroo0, aes(frequency, fill=veh_body, colour=veh_body))+ geom_density(alpha=0.2)+xlim(0,20)
+#log scaled
+ggplot(data=kangaroo0, aes(frequency, fill=veh_body, colour=veh_body))+ geom_density(alpha=0.2)+xlim(0,20)+scale_x_log10()
+#it may be a bad idea to ignore the zero count data
+```
+
+Frequency and dr_age
+```{r}
+#plot freq per age group
+boxplot(frequency~dr_age, pars=list(ylim=c(0,30)), train.df)
+#this isn't clear
+
+ggplot(data=train.df, aes(x=dr_age, y=frequency_1))+ geom_jitter(width=.4,height=0, alpha=.3)+scale_y_log10()
+#this isnt a good plot, we need to look at density
+
+#we need to see density
+ggplot(data=train.df, aes(x=frequency_1))+ geom_density()+scale_x_log10()+facet_wrap(~dr_age)+geom_rug()
+
+#######################################################################################################
+#######################################################################################################
+#again get rid of zeros and come back to this
+ggplot(data=kangaroo0, aes(x=frequency))+ geom_density()+scale_x_log10()+facet_wrap(~dr_age)+geom_rug()
+
+```
+
+
+
+
+freq and dr_age
+```{r}
+#desnity by color
+ggplot(data=train.df, aes(frequency_1, fill=dr_age, col=dr_age))+geom_density(alpha=0.2)+xlim(0,20)+scale_x_log10()
+#facet
+ggplot(data=train.df, aes(frequency_1, fill=dr_age, col=dr_age))+geom_density(alpha=0.2)+xlim(0,20)+scale_x_log10()+facet_wrap(~dr_age)
+
+
+
+```
+
+Frequency and exposure
+```{r}
+ggplot(data=train.df, aes(exposure, frequency_1))+ geom_point()+geom_jitter(width=.4,height=0, alpha=.3)+ylim(0,100)
+
+```
+
+freq and veh_value
+```{r}
+ggplot(data=train.df, aes(veh_value, frequency_1))+ geom_point()+geom_jitter(width=.4,height=0, alpha=.3)+xlim(0,50)+ylim(0,100)
+
+
+```
+Exploring severity
+```{r}
+
+
+
+#looking at gender
+ggplot(data=train.df0, aes(bal_severity, fill=gender, colour=gender))+ geom_density(alpha=0.2)
+#zoom lim
+ggplot(data=train.df0, aes(bal_severity, fill=gender, colour=gender))+ geom_density(alpha=0.2)+xlim(1000,20000)
+
+
+
+#looking at veh_age
+#factor veh_age
+train.df$veh_age<-factor(train.df$veh_age)
+#graph severity by veh_age
+ggplot(data=train.df, aes(severity, fill=veh_age, colour=veh_age))+ geom_density(alpha=0.2)
+#poisson distributed so lets log scale it to make it easier to interpret
+ggplot(data=train.df, aes(severity_1, fill=veh_age, colour=veh_age))+ geom_density(alpha=0.2)+scale_x_log10()
+ggplot(data=train.df, aes(severity_1, fill=veh_age))+ geom_density(alpha=0.2)+scale_x_log10()+facet_wrap(~veh_age)
+#can't see a relationship here
+
+#looking at veh_body
+ggplot(data=train.df, aes(x=severity_1, fill=veh_body, colour=veh_body))+ geom_density()+scale_x_log10()+facet_wrap(~veh_body)+geom_rug()
+
+#looking at dr_age 
+#factor dr_age
+train.df$dr_age<-factor(train.df$dr_age)
+#ploting dr_age with log scale, facet wrap
+ggplot(data=train.df, aes(severity_1, fill=dr_age, colour=dr_age))+ geom_density(alpha=0.35)+scale_x_log10()+facet_wrap(~dr_age)
+#appears to be higher mean severity among the age 1,2,3, and 6
+
+#looking at severity by area
+ggplot(data=train.df, aes(severity, fill=area, col=area))+geom_density()+scale_x_log10()+facet_wrap(~area)+geom_rug()
+
+#they appear to be similar distributions with similar means
+mean(train.df$severity[train.df$area=="A"])
+mean(train.df$severity[train.df$area=="B"])
+mean(train.df$severity[train.df$area=="C"])
+mean(train.df$severity[train.df$area=="D"])
+mean(train.df$severity[train.df$area=="E"])
+mean(train.df$severity[train.df$area=="F"])
+
+#deviation of distributions
+sd(train.df$severity[train.df$area=="A"])
+sd(train.df$severity[train.df$area=="B"])
+sd(train.df$severity[train.df$area=="C"])
+sd(train.df$severity[train.df$area=="D"])
+sd(train.df$severity[train.df$area=="E"])
+sd(train.df$severity[train.df$area=="F"])
+
+freq_lm<-lm(frequency~log(exposure)*dr_age,train.df)
+summary(freq_lm)
+ggplot(data=train.df, aes(exposure, y=freq_lm$residuals))+geom_point()
+
+ggplot(data=train.df, aes(exposure, frequency))+geom_point()+geom_smooth(method = "lm", se = FALSE)
+
+
+
+
+#about the same mean, F could have a higher mean simply because of a smaller sample size a few outliers.
+
+```
+
+
+lets look at veh_age and veh_value
+```{r}
+boxplot(veh_value ~ veh_age, data=train.df, main="Vehicle Value vs Vehicle Age", xlab="veh_age", ylab="veh_value") 
+#exponential decay
+ggplot(data=train.df, aes(x=veh_value))+ geom_density()+facet_wrap(~veh_age)+geom_rug()
+#the mean veh_value decreases as age goes up
+```
+
+some lms
+```{r}
+freq<-lm(frequency~exposure*gender*dr_age+veh_body-1, train.df)
+summary(freq)
+plot(train.df$exposure, freq$residuals)
+```
+
