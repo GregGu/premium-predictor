@@ -1,0 +1,63 @@
+
+
+tuned<-tune(svm, f,
+  data=train,
+  kernel="linear",
+  ranges=list(
+    cost=c(0.001,.01,.1,1,10,100)
+    )
+  )
+
+summary(tuned)
+
+# choose best parameters
+tune.out<-tune(svm, f,
+  data=train,
+  kernel="radial",
+  ranges=list(
+    cost=c(0.001,.01,.1,1,10,100)
+    )
+  )
+bestmodel=tune.out$best.model
+summary(bestmodel)
+
+ypredict<-predict(bestmodel, test, type="Class")
+
+
+
+# after creating the best fit parameters change prob to T re run fit then move out to prediction
+p<-predict(svmfit, test, type="class", probability=T)
+plot(p)
+
+error <- data$Y - predictedY
+svrPredictionRMSE <- rmse(error)
+svrPredictionRMSE
+
+# perform a grid search
+tuneResult <- tune(svm, Y ~ X,  data = data,
+              ranges = list(epsilon = seq(0,1,0.1), cost = 2^(2:9))
+)
+print(tuneResult)
+# best performance: MSE = 8.371412, RMSE = 2.89 epsilon 1e-04 cost 4
+# Draw the tuning graph
+# Darker regions represent lower error and better tuning parameters.
+plot(tuneResult)
+
+# We see the lower epsiolon values lower eror so lets narrow our search
+tuneResult <- tune(svm, Y ~ X,  data = data,
+                   ranges = list(epsilon = seq(0,0.2,0.01), cost = 2^(2:9))
+) 
+
+print(tuneResult)
+plot(tuneResult)
+
+# from here we can see what are possibly the best parameters.
+# instead of manually selecting them let's predict the best parameters
+tunedModel <- tuneResult$best.model
+tunedModelY <- predict(tunedModel, data) 
+
+error <- data$Y - tunedModelY  
+
+# change to MSE
+tunedModelRMSE <- rmse(error)
+tunedModelRMSE
