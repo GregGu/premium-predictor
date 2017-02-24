@@ -1,0 +1,41 @@
+library(dplyr)
+library(mclust)
+library(leaps)
+
+#read in dataset
+kangaroo <- read.csv("Kangaroo_train.csv")
+head(kangaroo)
+
+#create freq variable
+kangaroo$freq <- kangaroo$claim_count/kangaroo$exposure
+
+#try out best subsets with all variables
+leaps<-regsubsets(claim_cost~veh_value+exposure+veh_body+veh_age+gender+area+dr_age+claim_ind+claim_count,data=kangaroo,nbest=10)
+plot(leaps)
+plot(leaps,scale="r2")
+
+#filter without 0's
+kangaroo0 <- dplyr::filter(kangaroo, claim_count != 0)
+
+#filter out categorical variables
+kangaroo01 <- dplyr::select(kangaroo0, veh_value, exposure, freq, claim_cost)
+
+#mixture model clustering
+mod1 <- Mclust(kangaroo01)
+summary(mod1)
+plot(mod1, what = "classification")
+
+#seeing the clusters compared to different categorical variables
+table(kangaroo0$veh_body, mod1$classification)
+table(kangaroo0$gender, mod1$classification)
+table(kangaroo0$area, mod1$classification)
+table(kangaroo0$dr_age, mod1$classification)
+
+#kmeans clustering
+#one issue with kmeans is that you have to initialize the number of clusters you want before running the analysis. This kmeans runs option does that for you by looking at "elbow plots"
+library(fpc)
+mod2 <- kmeansruns(kangaroo01)
+table(kangaroo0$veh_body, mod2$cluster)
+table(kangaroo0$gender, mod2$cluster)
+table(kangaroo0$area, mod2$cluster)
+table(kangaroo0$dr_age, mod2$cluster)
